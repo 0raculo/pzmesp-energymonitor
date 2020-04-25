@@ -6,7 +6,7 @@
  * Pin 11 Rx (Connects to the Tx pin on the PZEM)
  * Pin 12 Tx (Connects to the Rx pin on the PZEM)
 */
-PZEM004Tv30 pzem(D6, D5);
+PZEM004Tv30 pzem(D6, D5); // RX/TX pins
 
 const char* ssid = "ssid"; // Enter your WiFi name
 const char* password =  "password"; // Enter WiFi password
