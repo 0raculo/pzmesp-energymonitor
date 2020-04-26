@@ -13,7 +13,7 @@
 #define mqtt_pass         "emon_garagem_pw"
 #define meter_name    "emon/PowerMeter1" //(TODO!)
 
-#define mqqt_client_name = "ESPPwMeterGaragem1"
+#define mqqt_client_name  "ESPPwMeterGaragem1"
 
 /* Use software serial for the PZEM
  * Pin 11 Rx (Connects to the Tx pin on the PZEM)
@@ -74,25 +74,50 @@ void setup() {
   if (SPIFFS.begin()) {
     Serial.println("mounted file system");
     if (SPIFFS.exists("/config.json")) {
-      //file exists, reading and loading
-      Serial.println("reading config file");
-      File configFile = SPIFFS.open("/config.json", "r");
-      if (configFile) {
-        Serial.println("opened config file");
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
+    //file exists, reading and loading
+    Serial.println("reading config file");
+    fs::File configFile = SPIFFS.open("/config.json", "r");
+    if (configFile) {
+      Serial.println("opened config file");
+      size_t size = configFile.size();
+      // Allocate a buffer to store contents of the file.
+      char buf [size+1];
+      uint8_t i =0;
 
-        configFile.readBytes(buf.get(), size);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial);
-        if (json.success()) {
+      while((configFile.available()))
+      {
+        buf[i]=configFile.read();
+        i++;
+      }
+      buf[i]='\0';
+      Serial.println(buf);
+      DynamicJsonDocument doc(256);
+
+      DeserializationError error = deserializeJson(doc, buf, strlen(buf));
+      if (error)
+      {
+        Serial.print(F("deserializeJson() failed with code "));
+        Serial.println(error.c_str());
+        return;
+      }
+      Serial.println(error.c_str());
+      JsonObject json = doc.to<JsonObject>();
+      //serializeJson(doc, Serial);
+
+      Serial.printf(doc["mqtt_server"] | "not found\n");
+  	  if (json.isNull())
+      {
+        Serial.println("parsed json");
+
+      }
+      else Serial.println("error in json");
+
+        if (error) {
           Serial.println("\nparsed json");
-          strcpy(mqtt_server, json["mqtt_server"]);
-          strcpy(mqtt_port, json["mqtt_port"]);
-          strcpy(mqtt_user, json["mqtt_user"]);
-          strcpy(mqtt_pass, json["mqtt_pass"]);
+            strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
+            strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
+            strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
+            strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
 
         } else {
           Serial.println("failed to load json config");
@@ -173,8 +198,8 @@ void setup() {
   //save the custom parameters to FS
   if (shouldSaveConfig) {
     Serial.println("saving config");
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.createObject();
+    DynamicJsonDocument jsonBuffer(1024);
+    JsonObject json = jsonBuffer.to<JsonObject>();
     json["mqtt_server"] = mqtt_server;
     json["mqtt_port"] = mqtt_port;
     json["mqtt_user"] = mqtt_user;
@@ -186,8 +211,10 @@ void setup() {
       Serial.println("failed to open config file for writing");
     }
 
-    json.printTo(Serial);
-    json.printTo(configFile);
+    serializeJson(json, Serial);
+    serializeJson(configFile, Serial);
+    
+    //json.printTo(configFile);
     configFile.close();
     //end save
   }
