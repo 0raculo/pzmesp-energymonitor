@@ -62,6 +62,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 
+
 void setup() {
  
   Serial.begin(115200);
@@ -77,56 +78,56 @@ void setup() {
     //file exists, reading and loading
     Serial.println("reading config file");
     fs::File configFile = SPIFFS.open("/config.json", "r");
-    if (configFile) {
-      Serial.println("opened config file");
-      size_t size = configFile.size();
-      // Allocate a buffer to store contents of the file.
-      char buf [size+1];
-      uint8_t i =0;
+        if (configFile) {
+            Serial.println("opened config file");
+            size_t size = configFile.size();
+            // Allocate a buffer to store contents of the file.
+            char buf [size+1];
+            uint8_t i =0;
 
-      while((configFile.available()))
-      {
-        buf[i]=configFile.read();
-        i++;
-      }
-      buf[i]='\0';
-      Serial.println(buf);
-      DynamicJsonDocument doc(256);
+            while((configFile.available()))
+            {
+                buf[i]=configFile.read();
+                i++;
+            }
+            buf[i]='\0';
+            Serial.println(buf);
+            DynamicJsonDocument doc(256);
 
-      DeserializationError error = deserializeJson(doc, buf, strlen(buf));
-      if (error)
-      {
-        Serial.print(F("deserializeJson() failed with code "));
-        Serial.println(error.c_str());
-        return;
-      }
-      Serial.println(error.c_str());
-      JsonObject json = doc.to<JsonObject>();
-      //serializeJson(doc, Serial);
+            DeserializationError error = deserializeJson(doc, buf, strlen(buf));
+            if (error)
+            {
+                Serial.print(F("deserializeJson() failed with code "));
+                Serial.println(error.c_str());
+                return;
+            }
+            Serial.println(error.c_str());
+            JsonObject json = doc.to<JsonObject>();
+            //serializeJson(doc, Serial);
 
-      Serial.printf(doc["mqtt_server"] | "not found\n");
-  	  if (json.isNull())
-      {
-        Serial.println("parsed json");
+            Serial.printf(doc["mqtt_server"] | "not found\n");
+            if (json.isNull())
+            {
+                Serial.println("parsed json");
 
-      }
-      else Serial.println("error in json");
+            }
+            else Serial.println("error in json");
 
-        if (error) {
-          Serial.println("\nparsed json");
-            strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
-            strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
-            strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
-            strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
+                if (error) {
+                Serial.println("\nparsed json");
+                    strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
+                    strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
+                    strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
+                    strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
 
-        } else {
-          Serial.println("failed to load json config");
+                } else {
+                Serial.println("failed to load json config");
+                        }
+            }
         }
-      }
-    }
-  } else {
-    Serial.println("failed to mount FS");
-  }
+        } else {
+            Serial.println("failed to mount FS");
+            }
 
 
     // The extra parameters to be configured (can be either global or just in the setup)
@@ -211,22 +212,21 @@ void setup() {
       Serial.println("failed to open config file for writing");
     }
 
-    serializeJson(json, Serial);
-    serializeJson(configFile, Serial);
+    serializeJson(json, configFile);
     
-    //json.printTo(configFile);
     configFile.close();
     //end save
-  }
+  } 
 
   Serial.println("local ip");
   Serial.println(WiFi.localIP());
 
-  const uint16_t mqtt_port_x = 12025; //TODO
-  client.setServer(mqtt_server, mqtt_port_x);
+  //const uint16_t mqtt_port_x = 12025; //TODO - confirmar que isto abaixo funciona.
+  client.setServer(mqtt_server, atoi(mqtt_port));
 
   client.setCallback(callback);
  }
+ 
  
 void reconnect() {
   while (!client.connected()) {
