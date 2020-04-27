@@ -9,23 +9,28 @@
 #include <PubSubClient.h>
 #include <EasyButton.h>           //https://github.com/evert-arias/EasyButton
 
+// Defaults below
 #define mqtt_server       "192.168.69.2"
 #define mqtt_port         "1883"
 #define mqtt_user         "emon_garagem"
 #define mqtt_pass         "emon_garagem_pw"
-#define meter_name    "emon/PowerMeter1"
-#define mqqt_client_name  "ESPPwMeterGaragem1"
+#define meter_name    "emon/PowerMeter2"
+#define mqqt_client_name  "ESPPwMeter2"
 #define BUTTON_PIN 0      //button for flash format
-
-
 PZEM004Tv30 pzem(D6, D5); // RX/TX pins
+int mqqt_con_retries = 10; // number of retries for connecting to MQTT server
+int mqqt_con_retries_delay = 5000; // seconds between retries
+
 EasyButton button(BUTTON_PIN);
 
 //flag for saving data
 bool shouldSaveConfig = false;
-
+int mqqt_con_retries_count = 0; // Number of tries counter
 long lastMsg = 0;
 long reading_delay = 5000;
+
+bool mqtt_connected = false;
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -50,20 +55,23 @@ void callback(char* topic, byte* payload, unsigned int length) {
  
 }
 
+// Factory reset via GPIO FLASH Button
 void onPressed() {
     Serial.println("Button has been pressed!");
     delay(1000);
     SPIFFS.remove("/config.json");
+    ESP.eraseConfig();
     ESP.reset();
 }
 
 void setup() {
   
   Serial.begin(115200);
-
+  pinMode(0, INPUT_PULLUP);
    //clean FS for testing 
    //  SPIFFS.format();
   button.begin();
+  button.onPressed(onPressed);
   Serial.println("mounting FS...");
 
   if (SPIFFS.begin()) {
@@ -152,7 +160,6 @@ void setup() {
       ESP.reset();
       delay(5000);
     }
-
   //if you get here you have connected to the WiFi
   Serial.println("connected...yeey :)");
 
@@ -183,7 +190,7 @@ void setup() {
     }
 
     serializeJson(json, configFile);
-    
+    Serial.println("Gravei o ficheiro");
     configFile.close();
     //end save
   } 
@@ -197,22 +204,21 @@ void setup() {
   client.setCallback(callback);
  }
  
- 
-void reconnect() {
-  while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
- 
-    if (client.connect(mqqt_client_name, mqtt_user, mqtt_pass)) {
-      Serial.println("connected");  
-    } else {
- 
-      Serial.print("failed with state ");
-      Serial.print(client.state());
-      delay(2000);
- 
-    }
-  }
 
+void reconnect() {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect(mqqt_client_name, mqtt_user, mqtt_pass)) {
+      Serial.println("connected");
+      mqtt_connected = true;
+    } else {
+      Serial.print("failed with state ");
+      Serial.println(client.state());
+      if(mqqt_con_retries_count==mqqt_con_retries){
+        Serial.println("Tried reconnect multiple times, will reset");
+        ESP.reset();
+      }
+
+  }
 }
  
 
@@ -271,19 +277,20 @@ Serial.println("=======================\nINICIEI o processamento\n==============
 }
  
 void loop() {
+  button.read(); //check if FLASH button was pressed for clearing config file - while connected
+  long now_read = millis();
+
+  if (now_read - lastMsg > reading_delay) { //Attempt to connect and read
+    lastMsg = now_read;
     if (!client.connected()) {
+    for (mqqt_con_retries_count; mqqt_con_retries_count <= mqqt_con_retries; ++mqqt_con_retries_count){
         reconnect();
+        button.read(); //if stuck on the for loop, check button
+      }
     }
-    client.loop();
-    
-    long now = millis();
-    if (now - lastMsg > reading_delay) {
-        // Wait a reading_delay between measurements
-    lastMsg = now;
 
+  client.loop();
+  process();
+  }
 
-    process();
-    button.read();
-
-    }
 }
