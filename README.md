@@ -7,7 +7,7 @@ Grabs Voltage, Current, Power, power factor and frequency and sends to the MQTT 
 
 In my case, i'm using Moquitto + EmonCMS
 
-Develop branch is in heavy testing (or untested)
+Develop branch is completely untested.
 
 TODO:
 - Use wifiManager for proper AP management,
