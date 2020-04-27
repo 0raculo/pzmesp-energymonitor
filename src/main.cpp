@@ -7,25 +7,25 @@
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h>
+#include <EasyButton.h>           //https://github.com/evert-arias/EasyButton
 
 #define mqtt_server       "192.168.69.2"
 #define mqtt_port         "1883"
 #define mqtt_user         "emon_garagem"
 #define mqtt_pass         "emon_garagem_pw"
-#define meter_name    "emon/PowerMeter1" //(TODO!)
-
+#define meter_name    "emon/PowerMeter1"
 #define mqqt_client_name  "ESPPwMeterGaragem1"
+#define BUTTON_PIN 0      //button for flash format
 
-/* Use software serial for the PZEM
- * Pin 11 Rx (Connects to the Tx pin on the PZEM)
- * Pin 12 Tx (Connects to the Rx pin on the PZEM)
-*/
+
 PZEM004Tv30 pzem(D6, D5); // RX/TX pins
+EasyButton button(BUTTON_PIN);
 
 //flag for saving data
 bool shouldSaveConfig = false;
 
 long lastMsg = 0;
+long reading_delay = 5000;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -50,74 +50,55 @@ void callback(char* topic, byte* payload, unsigned int length) {
  
 }
 
-
+void onPressed() {
+    Serial.println("Button has been pressed!");
+    delay(1000);
+    SPIFFS.remove("/config.json");
+    ESP.reset();
+}
 
 void setup() {
- 
+  
   Serial.begin(115200);
 
    //clean FS for testing 
    //  SPIFFS.format();
-
+  button.begin();
   Serial.println("mounting FS...");
 
   if (SPIFFS.begin()) {
     Serial.println("mounted file system");
     if (SPIFFS.exists("/config.json")) {
-    //file exists, reading and loading
-    Serial.println("reading config file");
-    File configFile = SPIFFS.open("/config.json", "r");
-        if (configFile) {
-            Serial.println("opened config file");
-            size_t size = configFile.size();
-            // Allocate a buffer to store contents of the file.
-            char buf [size+1];
-            uint8_t i =0;
+      //file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
 
-            while((configFile.available()))
-            {
-                buf[i]=configFile.read();
-                i++;
-            }
-            buf[i]='\0';
-            Serial.println(buf);
-            DynamicJsonDocument doc(256);
+        configFile.readBytes(buf.get(), size);
 
-            DeserializationError error = deserializeJson(doc, buf, strlen(buf));
-            if (error)
-            {
-                Serial.print(F("deserializeJson() failed with code "));
-                Serial.println(error.c_str());
-                return;
-            }
-            Serial.println(error.c_str());
-            JsonObject json = doc.to<JsonObject>();
-            //serializeJson(doc, Serial);
+        DynamicJsonDocument doc(1024);
+        auto deserializeError = deserializeJson(doc, buf.get());
+        serializeJson(doc, Serial);
+        if ( ! deserializeError ) {
+        Serial.println("\nparsed json");
+        strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
+        strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
+        strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
+        strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
 
-            Serial.printf(doc["mqtt_server"] | "not found\n");
-            if (json.isNull())
-            {
-                Serial.println("parsed json");
-
-            }
-            else Serial.println("error in json");
-
-                if (error) {
-                Serial.println("\nparsed json");
-                    strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
-                    strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
-                    strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
-                    strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
-
-                } else {
-                Serial.println("failed to load json config");
-                        }
-            }
-        }
         } else {
-            Serial.println("failed to mount FS");
-            }
-
+          Serial.println("failed to load json config");
+        }
+        configFile.close();
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
+  }
 
     // The extra parameters to be configured (can be either global or just in the setup)
   // After connecting, parameter.getValue() will get you the configured value
@@ -135,18 +116,18 @@ void setup() {
 // Reset Wifi settings for testing  
 //  wifiManager.resetSettings();
 
-  //set config save notify callback
-  wifiManager.setSaveConfigCallback(saveConfigCallback);
+    //set config save notify callback
+    wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   //set static ip
 //  wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
   
-  //add all your parameters here
-  wifiManager.addParameter(&custom_mqtt_server);
-  wifiManager.addParameter(&custom_mqtt_port);
-  wifiManager.addParameter(&custom_mqtt_user);
-  wifiManager.addParameter(&custom_mqtt_pass);
-  wifiManager.addParameter(&custom_meter_name);
+    //add all your parameters here
+    wifiManager.addParameter(&custom_mqtt_server);
+    wifiManager.addParameter(&custom_mqtt_port);
+    wifiManager.addParameter(&custom_mqtt_user);
+    wifiManager.addParameter(&custom_mqtt_pass);
+    wifiManager.addParameter(&custom_meter_name);
 
   //reset settings - for testing
   //wifiManager.resetSettings();
@@ -164,13 +145,13 @@ void setup() {
   //if it does not connect it starts an access point with the specified name
   //here  "AutoConnectAP"
   //and goes into a blocking loop awaiting configuration
-  if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
-    Serial.println("failed to connect and hit timeout");
-    delay(3000);
-    //reset and try again, or maybe put it to deep sleep
-    ESP.reset();
-    delay(5000);
-  }
+    if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
+      Serial.println("failed to connect and hit timeout");
+      delay(3000);
+      //reset and try again, or maybe put it to deep sleep
+      ESP.reset();
+      delay(5000);
+    }
 
   //if you get here you have connected to the WiFi
   Serial.println("connected...yeey :)");
@@ -237,6 +218,7 @@ void reconnect() {
 
 
 void process() {
+Serial.println("=======================\nINICIEI o processamento\n=======================");
     float voltage = pzem.voltage();
     if( !isnan(voltage) ){
         Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
@@ -285,7 +267,7 @@ void process() {
         Serial.println("Error reading power factor");
     }
 
-    Serial.println();
+    Serial.println("=======================\nTERMINEI o processamento\n=======================");
 }
  
 void loop() {
@@ -295,15 +277,13 @@ void loop() {
     client.loop();
     
     long now = millis();
-    if (now - lastMsg > 5000) {
-        // Wait a few seconds between measurements
+    if (now - lastMsg > reading_delay) {
+        // Wait a reading_delay between measurements
     lastMsg = now;
-    Serial.println("=======================");
+
 
     process();
-    
-    Serial.println("=======================");
-    Serial.println("TERMINEI o processamento");
+    button.read();
 
     }
 }
