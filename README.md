@@ -1,8 +1,13 @@
 # PZEM ESPEnergyMonitor
  PZEM004t v3.0 ESP8266 MQTT based Energy Monitor
 
-TODO:
-- Test current code :-)
+This MQTT publisher is based on an ESP8266 + the PZEM004-t Version 3.0 Energy Meter from peacefair.
 
-Roadmap:
-- Migrate to async-mqtt-client to ensure MQTT QoS 1
+Grabs Voltage, Current, Power, power factor and frequency and sends to the MQTT Broker.
+
+In my case, i'm using Moquitto + EmonCMS
+
+Code on master branch works but it's too sloppy.
+
+TODO:
+- Use wifiManager for proper AP management, and to manage mqtt settings (host, user, pass, etc).
