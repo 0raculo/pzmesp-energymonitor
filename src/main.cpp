@@ -1,28 +1,44 @@
+#include <FS.h> 
 #include <PZEM004Tv30.h>
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+//needed for library
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
+#include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h>
+#include <EasyButton.h>           //https://github.com/evert-arias/EasyButton
 
-/* Use software serial for the PZEM
- * Pin 11 Rx (Connects to the Tx pin on the PZEM)
- * Pin 12 Tx (Connects to the Rx pin on the PZEM)
-*/
-PZEM004Tv30 pzem(D6, D5);
+// Defaults below
+#define mqtt_server       "192.168.69.2"
+#define mqtt_port         "1883"
+#define mqtt_user         "emon_garagem"
+#define mqtt_pass         "emon_garagem_pw"
+#define meter_name    "emon/PowerMeter2"
+#define mqqt_client_name  "ESPPwMeter2"
+#define BUTTON_PIN 0      //button for flash format
+PZEM004Tv30 pzem(D6, D5); // RX/TX pins
+int mqqt_con_retries = 10; // number of retries for connecting to MQTT server
+int mqqt_con_retries_delay = 5000; // seconds between retries
 
-const char* ssid = "ssid"; // Enter your WiFi name
-const char* password =  "password"; // Enter WiFi password
-const char* mqttServer = "192.168.69.2";
-const int mqttPort = 1883;
-const char* mqttUser = "emon_garagem";
-const char* mqttPassword = "emon_garagem_pw";
+EasyButton button(BUTTON_PIN);
 
-//criar variaveis para MQTT client
-
-const char* mqqt_client_name = "ESPPwMeterGaragem1";
-
+//flag for saving data
+bool shouldSaveConfig = false;
+int mqqt_con_retries_count = 0; // Number of tries counter
 long lastMsg = 0;
+long reading_delay = 5000;
+
+bool mqtt_connected = false;
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+
+void saveConfigCallback () {
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
  
 void callback(char* topic, byte* payload, unsigned int length) {
  
@@ -39,43 +55,176 @@ void callback(char* topic, byte* payload, unsigned int length) {
  
 }
 
+// Factory reset via GPIO FLASH Button
+void onPressed() {
+    Serial.println("Button has been pressed!");
+    delay(1000);
+    SPIFFS.remove("/config.json");
+    ESP.eraseConfig();
+    ESP.reset();
+}
 
 void setup() {
- 
+  
   Serial.begin(115200);
- 
-  WiFi.begin(ssid, password);
- 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  pinMode(0, INPUT_PULLUP);
+   //clean FS for testing 
+   //  SPIFFS.format();
+  button.begin();
+  button.onPressed(onPressed);
+  Serial.println("mounting FS...");
+
+  if (SPIFFS.begin()) {
+    Serial.println("mounted file system");
+    if (SPIFFS.exists("/config.json")) {
+      //file exists, reading and loading
+      Serial.println("reading config file");
+      File configFile = SPIFFS.open("/config.json", "r");
+      if (configFile) {
+        Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+
+        DynamicJsonDocument doc(1024);
+        auto deserializeError = deserializeJson(doc, buf.get());
+        serializeJson(doc, Serial);
+        if ( ! deserializeError ) {
+        Serial.println("\nparsed json");
+        strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
+        strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
+        strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
+        strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
+
+        } else {
+          Serial.println("failed to load json config");
+        }
+        configFile.close();
+      }
+    }
+  } else {
+    Serial.println("failed to mount FS");
   }
-  Serial.println("Connected to the WiFi network");
- 
-  client.setServer(mqttServer, mqttPort);
+
+    // The extra parameters to be configured (can be either global or just in the setup)
+  // After connecting, parameter.getValue() will get you the configured value
+  // id/name placeholder/prompt default length
+  WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
+  WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
+  WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 20);
+  WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 20);
+  WiFiManagerParameter custom_meter_name("metername", "meter name", meter_name, 30);
+
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+
+// Reset Wifi settings for testing  
+//  wifiManager.resetSettings();
+
+    //set config save notify callback
+    wifiManager.setSaveConfigCallback(saveConfigCallback);
+
+  //set static ip
+//  wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+  
+    //add all your parameters here
+    wifiManager.addParameter(&custom_mqtt_server);
+    wifiManager.addParameter(&custom_mqtt_port);
+    wifiManager.addParameter(&custom_mqtt_user);
+    wifiManager.addParameter(&custom_mqtt_pass);
+    wifiManager.addParameter(&custom_meter_name);
+
+  //reset settings - for testing
+  //wifiManager.resetSettings();
+
+  //set minimum quality of signal so it ignores AP's under that quality
+  //defaults to 8%
+  //wifiManager.setMinimumSignalQuality();
+  
+  //sets timeout until configuration portal gets turned off
+  //useful to make it all retry or go to sleep
+  //in seconds
+  //wifiManager.setTimeout(120);
+
+  //fetches ssid and pass and tries to connect
+  //if it does not connect it starts an access point with the specified name
+  //here  "AutoConnectAP"
+  //and goes into a blocking loop awaiting configuration
+    if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
+      Serial.println("failed to connect and hit timeout");
+      delay(3000);
+      //reset and try again, or maybe put it to deep sleep
+      ESP.reset();
+      delay(5000);
+    }
+  //if you get here you have connected to the WiFi
+  Serial.println("connected...yeey :)");
+
+  //read updated parameters
+  strcpy(mqtt_server, custom_mqtt_server.getValue());
+  strcpy(mqtt_port, custom_mqtt_port.getValue());
+  strcpy(mqtt_user, custom_mqtt_user.getValue());
+  strcpy(mqtt_pass, custom_mqtt_pass.getValue());
+  strcpy(meter_name, custom_meter_name.getValue());
+
+  
+ // strcpy(blynk_token, custom_blynk_token.getValue());
+
+  //save the custom parameters to FS
+  if (shouldSaveConfig) {
+    Serial.println("saving config");
+    DynamicJsonDocument jsonBuffer(1024);
+    JsonObject json = jsonBuffer.to<JsonObject>();
+    json["mqtt_server"] = mqtt_server;
+    json["mqtt_port"] = mqtt_port;
+    json["mqtt_user"] = mqtt_user;
+    json["mqtt_pass"] = mqtt_pass;
+    json["meter_name"] = meter_name;
+
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+      Serial.println("failed to open config file for writing");
+    }
+
+    serializeJson(json, configFile);
+    Serial.println("Gravei o ficheiro");
+    configFile.close();
+    //end save
+  } 
+
+  Serial.println("local ip");
+  Serial.println(WiFi.localIP());
+
+  //const uint16_t mqtt_port_x = 12025; //TODO - confirmar que isto abaixo funciona.
+  client.setServer(mqtt_server, atoi(mqtt_port));
+
   client.setCallback(callback);
  }
  
-void reconnect() {
-  while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
- 
-    if (client.connect(mqqt_client_name, mqttUser, mqttPassword )) {
-      Serial.println("connected");  
-    } else {
- 
-      Serial.print("failed with state ");
-      Serial.print(client.state());
-      delay(2000);
- 
-    }
-  }
 
+void reconnect() {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect(mqqt_client_name, mqtt_user, mqtt_pass)) {
+      Serial.println("connected");
+      mqtt_connected = true;
+    } else {
+      Serial.print("failed with state ");
+      Serial.println(client.state());
+      if(mqqt_con_retries_count==mqqt_con_retries){
+        Serial.println("Tried reconnect multiple times, will reset");
+        ESP.reset();
+      }
+
+  }
 }
  
 
 
 void process() {
+Serial.println("=======================\nINICIEI o processamento\n=======================");
     float voltage = pzem.voltage();
     if( !isnan(voltage) ){
         Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
@@ -124,25 +273,24 @@ void process() {
         Serial.println("Error reading power factor");
     }
 
-    Serial.println();
+    Serial.println("=======================\nTERMINEI o processamento\n=======================");
 }
  
 void loop() {
+  button.read(); //check if FLASH button was pressed for clearing config file - while connected
+  long now_read = millis();
+
+  if (now_read - lastMsg > reading_delay) { //Attempt to connect and read
+    lastMsg = now_read;
     if (!client.connected()) {
+    for (mqqt_con_retries_count; mqqt_con_retries_count <= mqqt_con_retries; ++mqqt_con_retries_count){
         reconnect();
+        button.read(); //if stuck on the for loop, check button
+      }
     }
-    client.loop();
-    
-    long now = millis();
-    if (now - lastMsg > 5000) {
-        // Wait a few seconds between measurements
-    lastMsg = now;
-    Serial.println("=======================");
 
-    process();
-    
-    Serial.println("=======================");
-    Serial.println("TERMINEI o processamento");
+  client.loop();
+  process();
+  }
 
-    }
 }
