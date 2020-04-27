@@ -1,3 +1,4 @@
+#include <FS.h> 
 #include <PZEM004Tv30.h>
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 //needed for library
@@ -23,18 +24,6 @@ PZEM004Tv30 pzem(D6, D5); // RX/TX pins
 
 //flag for saving data
 bool shouldSaveConfig = false;
-
-
-
-/*
-const char* ssid = "ssid"; // Enter your WiFi name
-const char* password =  "password"; // Enter WiFi password
-const char* mqttServer = "192.168.69.2";
-const int mqttPort = 1883;
-const char* mqttUser = "emon_garagem";
-const char* mqttPassword = "emon_garagem_pw";
-*/
-//criar variaveis para MQTT client
 
 long lastMsg = 0;
 
@@ -77,7 +66,7 @@ void setup() {
     if (SPIFFS.exists("/config.json")) {
     //file exists, reading and loading
     Serial.println("reading config file");
-    fs::File configFile = SPIFFS.open("/config.json", "r");
+    File configFile = SPIFFS.open("/config.json", "r");
         if (configFile) {
             Serial.println("opened config file");
             size_t size = configFile.size();
