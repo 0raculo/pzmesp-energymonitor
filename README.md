@@ -6,3 +6,8 @@ This MQTT publisher is based on an ESP8266 + the PZEM004-t Version 3.0 Energy Me
 Grabs Voltage, Current, Power, power factor and frequency and sends to the MQTT Broker.
 
 In my case, i'm using Moquitto + EmonCMS
+
+Code on master branch works but it's too sloppy.
+
+TODO:
+- Use wifiManager for proper AP management, and to manage mqtt settings (host, user, pass, etc).
