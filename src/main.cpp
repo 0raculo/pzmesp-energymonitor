@@ -1,7 +1,6 @@
 #include <FS.h> 
 #include <PZEM004Tv30.h>
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
-//needed for library
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
@@ -14,8 +13,8 @@
 #define mqtt_port         "1883"
 #define mqtt_user         "emon_garagem"
 #define mqtt_pass         "emon_garagem_pw"
-#define meter_name    "emon/PowerMeter2"
-#define mqqt_client_name  "ESPPwMeter2"
+#define meter_name    "emon/PowerMeter1"
+#define mqtt_client_name  "ESPPwMeter1"
 #define BUTTON_PIN 0      //button for flash format
 PZEM004Tv30 pzem(D6, D5); // RX/TX pins
 int mqqt_con_retries = 10; // number of retries for connecting to MQTT server
@@ -97,6 +96,8 @@ void setup() {
         strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
         strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
         strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
+        strlcpy(meter_name, doc["meter_name"] | "emon/PowerMeter1", sizeof(mqtt_pass));
+        strlcpy(mqtt_client_name, doc["mqtt_client_name"] | "ESPPwMeter2", sizeof(mqtt_pass));
 
         } else {
           Serial.println("failed to load json config");
@@ -115,7 +116,8 @@ void setup() {
   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
   WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 20);
   WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 20);
-  WiFiManagerParameter custom_meter_name("metername", "meter name", meter_name, 30);
+  WiFiManagerParameter custom_meter_name("meter_name", "meter name", meter_name, 30);
+  WiFiManagerParameter custom_client_name("client name", "client name", mqtt_client_name, 30);
 
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
@@ -136,7 +138,7 @@ void setup() {
     wifiManager.addParameter(&custom_mqtt_user);
     wifiManager.addParameter(&custom_mqtt_pass);
     wifiManager.addParameter(&custom_meter_name);
-
+    wifiManager.addParameter(&custom_client_name);
   //reset settings - for testing
   //wifiManager.resetSettings();
 
@@ -169,7 +171,7 @@ void setup() {
   strcpy(mqtt_user, custom_mqtt_user.getValue());
   strcpy(mqtt_pass, custom_mqtt_pass.getValue());
   strcpy(meter_name, custom_meter_name.getValue());
-
+  strcpy(mqtt_client_name, custom_client_name.getValue());
   
  // strcpy(blynk_token, custom_blynk_token.getValue());
 
@@ -207,7 +209,7 @@ void setup() {
 
 void reconnect() {
     Serial.println("Connecting to MQTT...");
-    if (client.connect(mqqt_client_name, mqtt_user, mqtt_pass)) {
+    if (client.connect(mqtt_client_name, mqtt_user, mqtt_pass)) {
       Serial.println("connected");
       mqtt_connected = true;
     } else {
