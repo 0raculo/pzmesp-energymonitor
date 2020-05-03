@@ -16,17 +16,10 @@ char mqtt_server[40] =       "192.168.69.2";
 char mqtt_port[6] =          "1883";
 char mqtt_user[20] =         "emon_garagem";
 char mqtt_pass[32] =         "emon_garagem_pw";
-char meter_name[32] =        "emon/ConsumoCasa";
-char mqtt_client_name[32] =  "ESPPwMeter";
+char meter_name[32] =        "emon/ChangeME";
+char mqtt_client_name[32] =  "DefESPPwMeter";
 
 RemoteDebug Debug;
-
-/**char *mqtt_server;
-char *mqtt_port;
-char *mqtt_user;
-char *mqtt_pass;
-char *meter_name;
-char *mqtt_client_name;*/
 
 #define HOST_NAME "remotedebug.local"
 
@@ -50,29 +43,29 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 void saveConfigCallback () {
-  Serial.println("Should save config");
+  Debug.println("Should save config");
   shouldSaveConfig = true;
 }
  
 void callback(char* topic, byte* payload, unsigned int length) {
  
-  Serial.print("Message arrived in topic: ");
-  Serial.println(topic);
+  Debug.print("Message arrived in topic: ");
+  Debug.println(topic);
  
-  Serial.print("Message:");
+  Debug.print("Message:");
   for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+    Debug.print((char)payload[i]);
   }
  
-  Serial.println();
-  Serial.println("-----------------------");
+  Debug.println();
+  Debug.println("-----------------------");
  
 }
 
 
 // Factory reset via GPIO FLASH Button
 void onPressed() {
-    Serial.println("Button has been pressed!");
+    Debug.println("Button has been pressed!");
     delay(1000);
     SPIFFS.remove("/config.json");
     ESP.eraseConfig();
@@ -104,72 +97,72 @@ void setup() {
     } else { // U_FS
       type = "filesystem";
     }
-        Serial.println("Start updating " + type);
+        Debug.println("Start updating " + type);
   });
 
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
+    Debug.println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    Debug.printf("Progress: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
+    Debug.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
+      Debug.println("Auth Failed");
     } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
+      Debug.println("Begin Failed");
     } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
+      Debug.println("Connect Failed");
     } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
+      Debug.println("Receive Failed");
     } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
+      Debug.println("End Failed");
     }
   });
   ArduinoOTA.begin();
 
   button.begin();
-  button.onPressed(onPressed);
-  Serial.println("mounting FS...");
+  button.onPressedFor(4000, onPressed);
+  Debug.println("mounting FS...");
 
   if (SPIFFS.begin()) {
-    Serial.println("mounted file system");
+    Debug.println("mounted file system");
     if (SPIFFS.exists("/config.json")) {
       //file exists, reading and loading
-      Serial.println("reading config file");
+      Debug.println("reading config file");
       File configFile = SPIFFS.open("/config.json", "r");
       if (configFile) {
-        Serial.println("opened config file");
+        Debug.println("opened config file");
         size_t size = configFile.size();
         // Allocate a buffer to store contents of the file.
         std::unique_ptr<char[]> buf(new char[size]);
 
         configFile.readBytes(buf.get(), size);
 
-        DynamicJsonDocument doc(1024);
+        DynamicJsonDocument doc(2048);
         auto deserializeError = deserializeJson(doc, buf.get());
         Serial.println("Imprimir JSON:");
         serializeJson(doc, Serial);
         Serial.println("FIM DE IMPRESSAO");
 
         if ( ! deserializeError ) {
-        Serial.println("\nparsed json");
-        strlcpy(mqtt_server, doc["mqtt_server"] | "example.com", sizeof(mqtt_server));
-        strlcpy(mqtt_port, doc["mqtt_port"] | "1883", sizeof(mqtt_port));
-        strlcpy(mqtt_user, doc["mqtt_user"] | "emon_garagem", sizeof(mqtt_user));
-        strlcpy(mqtt_pass, doc["mqtt_pass"] | "emon_garagem_pw", sizeof(mqtt_pass));
-        strlcpy(meter_name, doc["meter_name"] | "emon/PowerMeter", sizeof(meter_name));
-        strlcpy(mqtt_client_name, doc["mqtt_client_name"] | "ESPPwMeter", sizeof(mqtt_client_name));
+        Debug.println("\nparsed json");
+        strlcpy(mqtt_server, doc["mqtt_server"], sizeof(mqtt_server));
+        strlcpy(mqtt_port, doc["mqtt_port"], sizeof(mqtt_port));
+        strlcpy(mqtt_user, doc["mqtt_user"], sizeof(mqtt_user));
+        strlcpy(mqtt_pass, doc["mqtt_pass"], sizeof(mqtt_pass));
+        strlcpy(meter_name, doc["meter_name"], sizeof(meter_name));
+        strlcpy(mqtt_client_name, doc["mqtt_client_name"], sizeof(mqtt_client_name));
 
         } else {
-          Serial.println("failed to load json config");
+          Debug.println("failed to load json config");
         }
         configFile.close();
       }
     }
   } else {
-    Serial.println("failed to mount FS");
+    Debug.println("failed to mount FS");
   }
 
     // The extra parameters to be configured (can be either global or just in the setup)
@@ -219,14 +212,14 @@ void setup() {
   //here  "AutoConnectAP"
   //and goes into a blocking loop awaiting configuration
     if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
-      Serial.println("failed to connect and hit timeout");
+      Debug.println("failed to connect and hit timeout");
       delay(3000);
       //reset and try again, or maybe put it to deep sleep
       ESP.reset();
       delay(5000);
     }
   //if you get here you have connected to the WiFi
-  Serial.println("connected...yeey :)");
+  Debug.println("connected...yeey :)");
 
   //read updated parameters
   strcpy(mqtt_server, custom_mqtt_server.getValue());
@@ -240,7 +233,7 @@ void setup() {
 
   //save the custom parameters to FS
   if (shouldSaveConfig) {
-    Serial.println("saving config");
+    Debug.println("saving config");
     DynamicJsonDocument jsonBuffer(1024);
     JsonObject json = jsonBuffer.to<JsonObject>();
     json["mqtt_server"] = mqtt_server;
@@ -248,20 +241,20 @@ void setup() {
     json["mqtt_user"] = mqtt_user;
     json["mqtt_pass"] = mqtt_pass;
     json["meter_name"] = meter_name;
-
+    json["mqtt_client_name"] = mqtt_client_name;
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
-      Serial.println("failed to open config file for writing");
+      Debug.println("failed to open config file for writing");
     }
 
     serializeJson(json, configFile);
-    Serial.println("Gravei o ficheiro");
+    Debug.println("Gravei o ficheiro");
     configFile.close();
     //end save
   } 
 
-  Serial.println("local ip");
-  Serial.println(WiFi.localIP());
+  Debug.println("local ip");
+  Debug.println(WiFi.localIP());
 
   //const uint16_t mqtt_port_x = 12025; //TODO - confirmar que isto abaixo funciona.
   client.setServer(mqtt_server, atoi(mqtt_port));
@@ -271,18 +264,18 @@ void setup() {
  
 
 void reconnect() {
-    Serial.println("Connecting to MQTT...");
+    Debug.println("Connecting to MQTT...");
     Debug.println("Connecting to MQTT...");
     if (client.connect(mqtt_client_name, mqtt_user, mqtt_pass)) {
-      Serial.println("connected");
+      Debug.println("connected");
       Debug.println("connected");
       mqtt_connected = true;
     } else {
-      Serial.print("failed with state ");
       Debug.print("failed with state ");
-      Serial.println(client.state());
+      Debug.print("failed with state ");
+      Debug.println(client.state());
       if(mqqt_con_retries_count==mqqt_con_retries){
-        Serial.println("Tried reconnect multiple times, will reset");
+        Debug.println("Tried reconnect multiple times, will reset");
         ESP.reset();
       }
 
@@ -292,71 +285,71 @@ void reconnect() {
 
 
 void process() {
-Serial.println("=======================\nINICIEI o processamento\n=======================");
+Debug.print("Reading started.");
     float voltage = pzem.voltage();
     if( !isnan(voltage) ){
-        Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
+        Debug.print(voltage); Debug.print("V ");
         char  topic_volt [31];
         sprintf(topic_volt,"%s%s",meter_name,"/Voltage");
         client.publish(topic_volt, String(voltage).c_str(), true);
     } else {
-        Serial.println("Error reading voltage");
+        Debug.println("Error reading voltage");
         Debug.println("Error reading voltage");
     }
 
     float current = pzem.current();
     if( !isnan(current) ){
-        Serial.print("Current: "); Serial.print(current); Serial.println("A");
+        Debug.print(current); Debug.print("A ");
         char  topic_current [31];
         sprintf(topic_current,"%s%s",meter_name,"/Current");
         client.publish(topic_current, String(current).c_str(), true);
     } else {
-        Serial.println("Error reading current");
+        Debug.println("Error reading current");
         Debug.println("Error reading current");
     }
 
     float power = pzem.power();
     if( !isnan(power) ){
-        Serial.print("Power: "); Serial.print(power); Serial.println("W");
+        Debug.print(power); Debug.print("W ");
         char  topic_power [31];
         sprintf(topic_power,"%s%s",meter_name,"/Power");
         client.publish(topic_power,  String(power).c_str(), true);
     } else {
-        Serial.println("Error reading power");
+        Debug.println("Error reading power");
         Debug.println("Error reading power");
     }
 
     float energy = pzem.energy();
     if( !isnan(energy) ){
-        Serial.print("Energy: "); Serial.print(energy,3); Serial.println("kWh");
+        Debug.print(energy,3); Debug.print("kWh ");
         char  topic_energy [31];
         sprintf(topic_energy,"%s%s",meter_name,"/Energy");
         client.publish(topic_energy,  String(energy).c_str(), true);
     } else {
-        Serial.println("Error reading energy");
+        Debug.println("Error reading energy");
     }
 
     float frequency = pzem.frequency();
     if( !isnan(frequency) ){
-        Serial.print("Frequency: "); Serial.print(frequency, 1); Serial.println("Hz");
+        Debug.print(frequency, 1); Debug.print("Hz ");
         char  topic_freq [31];
         sprintf(topic_freq,"%s%s",meter_name,"/Frequency");
         client.publish(topic_freq,  String(frequency).c_str(), true);
     } else {
-        Serial.println("Error reading frequency");
+        Debug.println("Error reading frequency");
     }
 
     float pf = pzem.pf();
     if( !isnan(pf) ){
-        Serial.print("PF: "); Serial.println(pf);
+        Debug.print(" PF: "); Debug.print(pf);
         char  topic_pf [31];
         sprintf(topic_pf,"%s%s",meter_name,"/PowerFactor");
         client.publish(topic_pf,  String(pf).c_str(), true);
     } else {
-        Serial.println("Error reading power factor");
+        Debug.println("Error reading power factor");
     }
 
-    Serial.println("=======================\nTERMINEI o processamento\n=======================");
+    Debug.println("Reading Finished");
 }
  
 void loop() {
