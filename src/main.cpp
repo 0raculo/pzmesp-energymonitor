@@ -265,15 +265,13 @@ void setup() {
 
 void reconnect() {
     Debug.println("Connecting to MQTT...");
-    Debug.println("Connecting to MQTT...");
     if (client.connect(mqtt_client_name, mqtt_user, mqtt_pass)) {
-      Debug.println("connected");
       Debug.println("connected");
       mqtt_connected = true;
     } else {
       Debug.print("failed with state ");
-      Debug.print("failed with state ");
       Debug.println(client.state());
+      delay(2000);
       if(mqqt_con_retries_count==mqqt_con_retries){
         Debug.println("Tried reconnect multiple times, will reset");
         ESP.reset();
@@ -294,7 +292,6 @@ Debug.print("Reading started.");
         client.publish(topic_volt, String(voltage).c_str(), true);
     } else {
         Debug.println("Error reading voltage");
-        Debug.println("Error reading voltage");
     }
 
     float current = pzem.current();
@@ -305,7 +302,6 @@ Debug.print("Reading started.");
         client.publish(topic_current, String(current).c_str(), true);
     } else {
         Debug.println("Error reading current");
-        Debug.println("Error reading current");
     }
 
     float power = pzem.power();
@@ -315,7 +311,6 @@ Debug.print("Reading started.");
         sprintf(topic_power,"%s%s",meter_name,"/Power");
         client.publish(topic_power,  String(power).c_str(), true);
     } else {
-        Debug.println("Error reading power");
         Debug.println("Error reading power");
     }
 
@@ -361,7 +356,9 @@ void loop() {
   if (now_read - lastMsg > reading_delay) { //Attempt to connect and read
     lastMsg = now_read;
     if (!client.connected()) {
-    for (mqqt_con_retries_count; mqqt_con_retries_count <= mqqt_con_retries; ++mqqt_con_retries_count){
+    Debug.println("MQTT Disconnected - entering IF");
+    for (mqqt_con_retries_count = 0; mqqt_con_retries_count <= mqqt_con_retries; ++mqqt_con_retries_count){
+      Debug.print("Retry number "); Debug.println(mqqt_con_retries_count);
         reconnect();
         button.read(); //if stuck on the for loop, check button
       }
